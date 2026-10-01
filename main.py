@@ -1,126 +1,158 @@
-from fastapi import FastAPI, status,HTTPException
-#from fastapi.params import Body
-from pydantic import BaseModel
-from typing import Optional
-import psycopg2 
+from fastapi import FastAPI, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from uuid import UUID
 
-conn = psycopg2.connect(
-    database="postgres", 
-    user="postgres",
-    password = "Utsav",
-    host="localhost",
-    port='5433'
+from database import get_db
+from models import User, Application
+from schemas import ApplicationCreate, ApplicationResponse
+
+
+app = FastAPI(
+    title="Job Application API",
+    description="API for managing job applications",
+    version="1.0.0"
 )
-cursor = conn.cursor()
-print("Database connected successfully!")
 
 
+@app.get("/")
+def root():
+    return {
+        "message": "Job Application API is running"
+    }
 
-app = FastAPI()
 
-class Post(BaseModel):
-    id: Optional[int] = None
-    title: str
-    content: str
+@app.post(
+    "/applications",
+    response_model=ApplicationResponse,
+    status_code=status.HTTP_201_CREATED
+)
+def create_application(
+    application: ApplicationCreate,
+    db: Session = Depends(get_db)
+):    
+    # Check that the user exists
+    user = db.get(User, application.user_id)
 
-@app.get("/posts")
-def get_posts():
-
-    cursor.execute("SELECT * FROM posts")
-
-    posts = cursor.fetchall()
-
-    return {"posts": posts}
-    
-@app.get("/posts/{id}")
-def get_post(id: int):
-    cursor.execute("SELECT * FROM posts WHERE id = %s",
-                    (id,)
-    )
-    post = cursor.fetchone()
-
-    if post is None:
+    if user is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Post with id {id} not found"
+            detail="User not found"
         )
 
-    return {"post": post}
-
-#CREATE POST
-
-@app.post("/posts", status_code=status.HTTP_201_CREATED)
-def create_post(post: Post):
-
-    cursor.execute(
-        """
-        INSERT INTO posts (title, content)
-        VALUES (%s, %s)
-        RETURNING *
-        """,
-        (post.title, post.content)
+    # Create application object
+    new_application = Application(
+        user_id=application.user_id,
+        company_name=application.company_name,
+        job_title=application.job_title,
+        job_description=application.job_description
     )
 
-    new_post = cursor.fetchone()
+    # Add to database
+    db.add(new_application)
 
-    conn.commit()
+    # Save transaction
+    db.commit()
 
-    return {"post": new_post}
+    # Load generated values such as UUID, status, timestamps
+    db.refresh(new_application)
 
-#UPDATE POST 
+    return new_application
 
-@app.put("/posts/{id}")
-def update_post(id: int, post: Post):
 
-    cursor.execute(
-        """
-        UPDATE posts
-        SET title = %s,
-            content = %s
-        WHERE id = %s
-        RETURNING *
-        """,
-        (post.title, post.content, id)
+@app.get(
+    "/applications",
+    response_model=list[ApplicationResponse]
+)
+def get_applications(
+    db: Session = Depends(get_db)
+):
+    applications = (
+        db.query(Application)
+        .order_by(Application.created_at.desc())
+        .all()
+    )
+    return applications
+@app.get(
+    "/applications/{application_id}",
+    response_model=ApplicationResponse
+)
+def get_application(
+    application_id: UUID,
+    db: Session = Depends(get_db)
+):
+    application = (
+        db.query(Application)
+        .filter(Application.id == application_id)
+        .first()
     )
 
-    updated_post = cursor.fetchone()
-
-    if updated_post is None:
-        conn.rollback()
-
+    if application is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Post with id {id} not found"
+            detail="Application not found"
         )
 
-    conn.commit()
-
-    return {"post": updated_post}
-#DELETE POST 
-
-@app.delete("/posts/{id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_post(id: int):
-
-    cursor.execute(
-        """
-        DELETE FROM posts
-        WHERE id = %s
-        RETURNING id
-        """,
-        (id,)
+    return application
+@app.put(
+    "/applications/{application_id}",
+    response_model=ApplicationResponse
+)
+def update_application(
+    application_id: UUID,
+    application: ApplicationCreate,
+    db: Session = Depends(get_db)
+):
+    existing_application = (
+        db.query(Application)
+        .filter(Application.id == application_id)
+        .first()
     )
 
-    deleted_post = cursor.fetchone()
-
-    if deleted_post is None:
-
-        conn.rollback()
-
+    if existing_application is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Post with id {id} not found"
+            detail="Application not found"
         )
 
-    conn.commit()
+    # Make sure the new user exists
+    user = db.get(User, application.user_id)
+
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    existing_application.user_id = application.user_id
+    existing_application.company_name = application.company_name
+    existing_application.job_title = application.job_title
+    existing_application.job_description = application.job_description
+
+    db.commit()
+    db.refresh(existing_application)
+
+    return existing_application
+@app.delete(
+    "/applications/{application_id}",
+    status_code=status.HTTP_204_NO_CONTENT
+)
+def delete_application(
+    application_id: UUID,
+    db: Session = Depends(get_db)
+):
+    application = (
+        db.query(Application)
+        .filter(Application.id == application_id)
+        .first()
+    )
+
+    if application is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Application not found"
+        )
+
+    db.delete(application)
+    db.commit()
 
     return None
