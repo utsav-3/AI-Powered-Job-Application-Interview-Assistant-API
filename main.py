@@ -4,7 +4,8 @@ from uuid import UUID
 
 from database import get_db
 from models import User, Application
-from schemas import ApplicationCreate, ApplicationResponse
+from schemas import ApplicationCreate, ApplicationResponse,  ApplicationStatusUpdate
+
 
 
 app = FastAPI(
@@ -156,3 +157,30 @@ def delete_application(
     db.commit()
 
     return None
+@app.patch(
+    "/applications/{application_id}/status",
+    response_model=ApplicationResponse
+)
+def update_application_status(
+    application_id: UUID,
+    status_update: ApplicationStatusUpdate,
+    db: Session = Depends(get_db)
+):
+    application = (
+        db.query(Application)
+        .filter(Application.id == application_id)
+        .first()
+    )
+
+    if application is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Application not found"
+        )
+
+    application.status = status_update.status.value
+
+    db.commit()
+    db.refresh(application)
+
+    return application

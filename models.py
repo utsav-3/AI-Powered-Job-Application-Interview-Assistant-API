@@ -91,6 +91,7 @@ class Application(Base):
     )
 
     updated_at = Column(
-        DateTime(timezone=True),
-        server_default=func.now()
-    )
+    DateTime(timezone=True),
+    server_default=func.now(),
+    onupdate=func.now()
+)
