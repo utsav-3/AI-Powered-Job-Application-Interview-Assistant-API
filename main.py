@@ -5,7 +5,8 @@ from uuid import UUID
 from database import get_db
 from models import User, Application
 from schemas import ApplicationCreate, ApplicationResponse,  ApplicationStatusUpdate
-
+from pipeline_service import run_analysis_pipeline
+from schemas import   ApplicationCreate, ApplicationResponse, ApplicationStatusUpdate, PipelineRunResponse
 
 
 app = FastAPI(
@@ -184,3 +185,30 @@ def update_application_status(
     db.refresh(application)
 
     return application
+@app.post(
+    "/applications/{application_id}/analyze",
+    response_model=PipelineRunResponse
+)
+def analyze_application(
+    application_id: UUID,
+    db: Session = Depends(get_db)
+):
+
+    application = (
+        db.query(Application)
+        .filter(Application.id == application_id)
+        .first()
+    )
+
+    if application is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Application not found"
+        )
+
+    pipeline_run = run_analysis_pipeline(
+        db,
+        application
+    )
+
+    return pipeline_run

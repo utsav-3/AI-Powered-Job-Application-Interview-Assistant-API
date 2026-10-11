@@ -36,3 +36,30 @@ class ApplicationResponse(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class PipelineStatus(str, Enum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
+class PipelineRunResponse(BaseModel):
+    id: UUID
+    application_id: UUID
+    status: PipelineStatus
+    current_step: str | None
+    started_at: datetime | None
+    completed_at: datetime | None
+    error_message: str | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+    
+class AIAnalysisResult(BaseModel):
+    required_skills: list[str]
+    matched_skills: list[str]
+    missing_skills: list[str]
+    interview_topics: list[str]
+    summary: str
